@@ -52,8 +52,40 @@ public class Server {
                 switch (gettedMessage.getType()){
                     case SEND -> System.out.println("Hello world \n Поступило сообщение SEND");
                     case SEND_FILE -> saveFileServer(gettedMessage.getData());
+                    case RECEIVE_FILE -> sendFileClient(gettedMessage.getData());
+                    case HTTP550 -> System.out.println("ошибка(((");
+                    case HTTP226 -> System.out.println("Файл был успешно загружен.");
                 }
             }
+        }
+
+        private void sendFileClient(String fileName) throws IOException {
+            File file = new File(rootDirectory + "/"  + fileName);
+            if(!file.exists()){
+                clientConnection.send(new Message(MessageType.FILE_NOT_EXIST, "Такого файла не существует"));
+                return;
+            }
+
+            clientConnection.send(new Message(MessageType.SEND_FILE, file.getName()));
+
+            long fileSize = file.length();
+            clientConnection.getOut().writeLong(fileSize);
+            clientConnection.getOut().flush();
+
+            try (BufferedInputStream bis = new BufferedInputStream(new FileInputStream(file))) {
+                byte[] buffer = new byte[8192];
+                int bytesRead;
+                long totalSent = 0;
+
+                while ((bytesRead = bis.read(buffer)) != -1) {
+                    clientConnection.getOut().write(buffer, 0, bytesRead);
+                    totalSent += bytesRead;
+                    System.out.println("Отправлено " + totalSent + " из " + fileSize + " байт");
+                }
+                clientConnection.getOut().flush();
+            }
+
+
         }
 
         private void saveFileServer(String fileName) throws IOException {
@@ -63,9 +95,7 @@ public class Server {
             try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(file))) {
                 long fileSize = clientConnection.getIn().readLong();
                 System.out.println("Ожидаемый размер файла: " + fileSize + " байт");
-                
-                clientConnection.send(new Message(MessageType.HTTP150, "Ожидаю файл " + fileName));
-                
+
                 byte[] buffer = new byte[8192];
                 int bytesRead;
                 long totalReceived = 0;
@@ -79,9 +109,7 @@ public class Server {
                 bos.flush();
                 
                 if (totalReceived == fileSize) {
-                    System.out.println("Файл загружен, отправляю HTTP226");
                     clientConnection.send(new Message(MessageType.HTTP226, "Файл загружен"));
-                    System.out.println("Сообщение HTTP226 отправлено успешно");
                 } else {
                     System.out.println("Ошибка: получено неверное количество байт");
                     clientConnection.send(new Message(MessageType.HTTP550, "Ошибка загрузки файла"));

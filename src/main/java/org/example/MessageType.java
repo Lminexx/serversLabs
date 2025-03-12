@@ -6,6 +6,7 @@ public enum MessageType {
     RECEIVE,
     SEND_FILE,
     RECEIVE_FILE,
+    FILE_NOT_EXIST,
     HTTP150,
     HTTP226,
     HTTP550

@@ -1,7 +1,5 @@
 package org.example;
-
 import lombok.Getter;
-
 import java.io.*;
 import java.net.Socket;
 
@@ -31,9 +29,10 @@ public class Client {
                 System.out.println("Получено сообщение: " + message.getType() + " - " + message.getData());
                 switch (message.getType()) {
                     case RECEIVE -> System.out.println("Поступило сообщение клиенту");
-                    case HTTP150 -> System.out.println("жду");
-                    case HTTP226 -> System.out.println("ура я загрузил файл четко чечетко");
-                    case HTTP550 -> System.out.println("я лох");
+                    case HTTP226 -> System.out.println("Файл был успешно загружен.");
+                    case HTTP550 -> System.out.println("Не удалось загрузить файл.");
+                    case FILE_NOT_EXIST -> System.out.println(message.getData());
+                    case SEND_FILE -> saveFileClient(message.getData());
                 }
             }
         }
@@ -45,15 +44,50 @@ public class Client {
     }
 
 
+    public void saveFileClient(String fileName) throws IOException {
+        File file = new File(fileName);
+
+        try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(file))) {
+            long fileSize = connection.getIn().readLong();
+            System.out.println("Ожидаемый размер файла: " + fileSize + " байт");
+
+
+            byte[] buffer = new byte[8192];
+            int bytesRead;
+            long totalReceived = 0;
+
+            while (totalReceived < fileSize && (bytesRead = connection.getIn().read(buffer)) != -1) {
+                bos.write(buffer, 0, bytesRead);
+                totalReceived += bytesRead;
+                System.out.println("Получено " + totalReceived + " из " + fileSize + " байт");
+            }
+
+            bos.flush();
+
+            if (totalReceived == fileSize) {
+                connection.send(new Message(MessageType.HTTP226, "Файл загружен"));
+            } else {
+                System.out.println("Ошибка: получено неверное количество байт");
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+            connection.send(new Message(MessageType.HTTP550, "Ошибка загрузки файла"));
+        }
+    }
+
+    public void downloadFile(String name) throws IOException {
+        connection.send(new Message(MessageType.RECEIVE_FILE, name));
+    }
+
     public void sendFile(String name) throws IOException {
         File file = new File(name);
         if (!file.exists()) {
             System.out.println("Файл не найден!");
             return;
         }
-        
+
         connection.send(new Message(MessageType.SEND_FILE, file.getName()));
-        
+
         long fileSize = file.length();
         connection.getOut().writeLong(fileSize);
         connection.getOut().flush();
